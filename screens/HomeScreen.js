@@ -1,11 +1,11 @@
-// screens/HomeScreen.js
 import React, { useEffect, useState } from "react";
-import { View, Text, FlatList, TextInput, Button, StyleSheet, TouchableOpacity, Alert, Modal } from "react-native";
+import { View, Text, FlatList, TextInput, Button, StyleSheet, TouchableOpacity, Alert, Modal, ActivityIndicator } from "react-native";
 import { ref, push, onValue, remove, update } from "firebase/database";
-import { signOut } from "firebase/auth";
+import { signOut, onAuthStateChanged } from "firebase/auth";
 import { db, auth } from "../firebase/firebaseConfig";
 
-export default function HomeScreen({ user }) {
+export default function HomeScreen() {
+  const [user, setUser] = useState(null);
   const [contacts, setContacts] = useState([]);
   const [name, setName] = useState("");
   const [number, setNumber] = useState("");
@@ -15,28 +15,30 @@ export default function HomeScreen({ user }) {
   const [editName, setEditName] = useState("");
   const [editNumber, setEditNumber] = useState("");
 
-  const uid = user.uid;
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (u) => setUser(u));
+    return unsubscribe;
+  }, []);
 
   useEffect(() => {
-    const contactsRef = ref(db, `contacts/${uid}`);
+    if (!user) return;
+    const contactsRef = ref(db, `contacts/${user.uid}`);
     const unsub = onValue(contactsRef, (snapshot) => {
       const data = snapshot.val();
       if (!data) {
         setContacts([]);
         return;
       }
-      const parsed = Object.keys(data).map(key => ({ key, ...data[key] }));
+      const parsed = Object.keys(data).map((key) => ({ key, ...data[key] }));
       setContacts(parsed);
     });
-
     return () => unsub();
-  }, [uid]);
+  }, [user]);
 
   const addContact = async () => {
     if (!name || !number) return Alert.alert("Erro", "Preencha nome e número");
-    const contactsRef = ref(db, `contacts/${uid}`);
     try {
-      await push(contactsRef, { name, number });
+      await push(ref(db, `contacts/${user.uid}`), { name, number });
       setName("");
       setNumber("");
     } catch (err) {
@@ -52,12 +54,12 @@ export default function HomeScreen({ user }) {
         style: "destructive",
         onPress: async () => {
           try {
-            await remove(ref(db, `contacts/${uid}/${key}`));
+            await remove(ref(db, `contacts/${user.uid}/${key}`));
           } catch (err) {
             Alert.alert("Erro ao excluir", err.message);
           }
-        }
-      }
+        },
+      },
     ]);
   };
 
@@ -71,7 +73,7 @@ export default function HomeScreen({ user }) {
   const saveEdit = async () => {
     if (!editName || !editNumber) return Alert.alert("Erro", "Preencha nome e número");
     try {
-      await update(ref(db, `contacts/${uid}/${editingKey}`), { name: editName, number: editNumber });
+      await update(ref(db, `contacts/${user.uid}/${editingKey}`), { name: editName, number: editNumber });
       setEditing(false);
       setEditingKey(null);
       setEditName("");
@@ -89,6 +91,15 @@ export default function HomeScreen({ user }) {
     }
   };
 
+  if (!user) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#3399cc" />
+        <Text>Carregando...</Text>
+      </View>
+    );
+  }
+
   const renderItem = ({ item }) => (
     <View style={styles.item}>
       <View style={{ flex: 1 }}>
@@ -98,7 +109,7 @@ export default function HomeScreen({ user }) {
       <TouchableOpacity style={styles.btn} onPress={() => startEdit(item)}>
         <Text style={styles.btnText}>Editar</Text>
       </TouchableOpacity>
-      <TouchableOpacity style={[styles.btn, { backgroundColor: "#e73caeff" }]} onPress={() => deleteContact(item.key)}>
+      <TouchableOpacity style={[styles.btn, { backgroundColor: "#e73cae" }]} onPress={() => deleteContact(item.key)}>
         <Text style={styles.btnText}>Excluir</Text>
       </TouchableOpacity>
     </View>
@@ -118,6 +129,7 @@ export default function HomeScreen({ user }) {
         data={contacts}
         keyExtractor={(item) => item.key}
         renderItem={renderItem}
+        extraData={contacts}
         ListEmptyComponent={<Text style={{ textAlign: "center", marginTop: 20 }}>Nenhum contato ainda</Text>}
         contentContainerStyle={{ paddingBottom: 40 }}
       />
@@ -126,7 +138,6 @@ export default function HomeScreen({ user }) {
         <Button title="Sair" onPress={handleLogout} />
       </View>
 
-      {/* Modal de edição */}
       <Modal visible={editing} animationType="slide" transparent>
         <View style={styles.modalContainer}>
           <View style={styles.modalContent}>
@@ -144,14 +155,15 @@ export default function HomeScreen({ user }) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex:1, padding:16, backgroundColor:"#fff" },
-  title: { fontSize:22, fontWeight:"bold", marginBottom:12, textAlign:"center" },
+  container: { flex: 1, padding: 16, backgroundColor: "#fff" },
+  title: { fontSize: 22, fontWeight: "bold", marginBottom: 12, textAlign: "center" },
   form: { marginBottom: 12 },
-  input: { borderWidth:1, borderColor:"#ccc", padding:8, marginBottom:8, borderRadius:6 },
-  item: { flexDirection:"row", alignItems:"center", padding:12, borderWidth:1, borderColor:"#eee", marginBottom:8, borderRadius:6 },
-  itemName: { fontWeight:"bold", fontSize:16 },
-  btn: { paddingHorizontal:12, paddingVertical:6, backgroundColor:"#d3d01dff", borderRadius:6, marginLeft:8 },
-  btnText: { color:"#fff" },
-  modalContainer: { flex:1, backgroundColor:"rgba(0,0,0,0.5)", justifyContent:"center", alignItems:"center" },
-  modalContent: { width:"90%", backgroundColor:"#fff", padding:16, borderRadius:8 }
+  input: { borderWidth: 1, borderColor: "#ccc", padding: 8, marginBottom: 8, borderRadius: 6 },
+  item: { flexDirection: "row", alignItems: "center", padding: 12, borderWidth: 1, borderColor: "#eee", marginBottom: 8, borderRadius: 6 },
+  itemName: { fontWeight: "bold", fontSize: 16 },
+  btn: { paddingHorizontal: 12, paddingVertical: 6, backgroundColor: "#d3d01d", borderRadius: 6, marginLeft: 8 },
+  btnText: { color: "#fff" },
+  modalContainer: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "center", alignItems: "center" },
+  modalContent: { width: "90%", backgroundColor: "#fff", padding: 16, borderRadius: 8 },
+  loadingContainer: { flex: 1, justifyContent: "center", alignItems: "center" },
 });
